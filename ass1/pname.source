@@ -1,0 +1,146 @@
+---------------------------------------------------------------------------
+--
+-- pname.sql-
+--    This file shows how to create a new user-defined type and how to
+--    use this new type.
+--
+-- src/tutorial/pname.source
+--
+---------------------------------------------------------------------------
+
+-----------------------------
+-- Creating a new type:
+--	We are going to create a new type called 'PersonName' which represents
+--	person names.
+--	A user-defined type must have an input and an output function, and
+--	optionally can have binary input and output functions.  All of these
+--	are usually user-defined C functions.
+-----------------------------
+
+-- Assume the user defined functions are in _OBJWD_/pname$DLSUFFIX
+-- (we do not want to assume this is in the dynamic loader search path).
+-- Look at $PWD/pname.c for the source.  Note that we declare all of
+-- them as STRICT, so we do not need to cope with NULL inputs in the
+-- C code.  We also mark them IMMUTABLE, since they always return the
+-- same outputs given the same inputs.
+
+-- the input function 'pname_in' takes a null-terminated string (the
+-- textual representation of the type) and turns it into the internal
+-- (in memory) representation.
+
+CREATE FUNCTION pname_in(cstring)
+   RETURNS PersonName
+   AS '_OBJWD_/pname'
+   LANGUAGE C IMMUTABLE STRICT;
+
+-- the output function 'pname_out' takes the internal representation and
+-- converts it into the textual representation.
+
+CREATE FUNCTION pname_out(PersonName)
+   RETURNS cstring
+   AS '_OBJWD_/pname'
+   LANGUAGE C IMMUTABLE STRICT;
+
+
+-- now, we can create the type.
+
+CREATE TYPE PersonName (
+   internallength = VARIABLE,
+   input = pname_in,
+   output = pname_out
+);
+
+
+-----------------------------
+-- Interfacing New Types with Btree and hash Indexes:
+-----------------------------
+
+-- first, define the required operators
+CREATE FUNCTION pname_lt(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+CREATE FUNCTION pname_le(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+CREATE FUNCTION pname_eq(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+CREATE FUNCTION pname_ge(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+CREATE FUNCTION pname_gt(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+CREATE FUNCTION pname_neq(PersonName, PersonName) RETURNS bool
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+
+
+CREATE OPERATOR < (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_lt,
+   commutator = > , negator = >= ,
+   restrict = scalarltsel, join = scalarltjoinsel
+);
+CREATE OPERATOR <= (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_le,
+   commutator = >= , negator = > ,
+   restrict = scalarlesel, join = scalarlejoinsel
+);
+CREATE OPERATOR = (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_eq,
+   commutator = = , negator = <> ,
+   restrict = eqsel, join = eqjoinsel
+);
+CREATE OPERATOR >= (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_ge,
+   commutator = <= , negator = < ,
+   restrict = scalargesel, join = scalargejoinsel
+);
+CREATE OPERATOR > (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_gt,
+   commutator = < , negator = <= ,
+   restrict = scalargtsel, join = scalargtjoinsel
+);
+CREATE OPERATOR <> (
+   leftarg = PersonName, rightarg = PersonName, procedure = pname_neq,
+   commutator = <> , negator = = ,
+   restrict = scalargtsel, join = scalargtjoinsel
+);
+
+
+-- create the support function too
+CREATE FUNCTION pname_cmp(PersonName, PersonName) RETURNS int4
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION pname_hash(PersonName) RETURNS int4
+   AS '_OBJWD_/pname' LANGUAGE C IMMUTABLE STRICT;
+
+-- now we can make the operator class
+CREATE OPERATOR CLASS pname_btree_ops
+   DEFAULT FOR TYPE PersonName USING btree AS
+      OPERATOR        1       < ,
+      OPERATOR        2       <= ,
+      OPERATOR        3       = ,
+      OPERATOR        4       >= ,
+      OPERATOR        5       > ,
+      FUNCTION        1       pname_cmp(PersonName, PersonName);
+
+
+CREATE OPERATOR CLASS pname_hash_ops
+   DEFAULT FOR TYPE PersonName USING hash AS
+      OPERATOR        1       = ,
+      FUNCTION        1       pname_hash(PersonName);
+
+
+-----------------------------
+-- Creating new operations for the new type:
+-----------------------------
+
+CREATE FUNCTION family(PersonName)
+   RETURNS text
+   AS '_OBJWD_/pname'
+   LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION given(PersonName)
+   RETURNS text
+   AS '_OBJWD_/pname'
+   LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION show(PersonName)
+   RETURNS text
+   AS '_OBJWD_/pname'
+   LANGUAGE C IMMUTABLE STRICT;
